@@ -1,0 +1,5 @@
+*.swp
+*.swo
+*.DS_store
+testdata/testdata
+testdata/objects/

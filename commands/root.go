@@ -18,16 +18,19 @@ type rootT struct {
 var root = &cli.Command{
 	Name: "cbuild",
 	Desc: "c/c++ program builder",
-	Argv: func() interface{} {
-		argv := new(rootT)
-		argv.Config.Init()
-		return argv
-	},
+	Argv: func() interface{} { return new(rootT) },
 
 	Fn: func(ctx *cli.Context) error {
 		argv := ctx.Argv().(*rootT)
+		if err := argv.Config.Load(ctx); err != nil {
+			return err
+		}
 		internal.SetLogLevel(argv.Config.LogLevel)
 		log.WithJSON(argv).Trace("argv")
-		return internal.CreateMakefile(argv.Config, argv.BuildEnv)
+		makefile, err := internal.CreateMakefile(argv.Config, argv.BuildEnv)
+		if makefile == nil {
+			return err
+		}
+		return nil
 	},
 }
