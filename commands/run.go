@@ -31,6 +31,7 @@ var run = &cli.Command{
 		if err := argv.Config.Load(ctx); err != nil {
 			return err
 		}
+		argv.Config.ObjectsDir = filepath.Join(os.TempDir(), "cbuild_objects")
 		internal.SetLogLevel(argv.Config.LogLevel)
 		log.WithJSON(argv).Trace("argv")
 		argv.BuildEnv.Stdout = ioutil.Discard
@@ -40,7 +41,7 @@ var run = &cli.Command{
 		}
 		defer os.RemoveAll(makefile.BuildDir)
 		defer os.Remove(makefile.Target)
-		bin := makefile.Target
+		bin := filepath.Clean(makefile.Target)
 		if !filepath.IsAbs(bin) {
 			bin = "./" + bin
 		}

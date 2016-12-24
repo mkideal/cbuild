@@ -4,9 +4,15 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/mkideal/cli"
 	"github.com/mkideal/log/logger"
+)
+
+const (
+	ENV_CBUILD_INCLUDES = "CBUILD_INCLUDES"
+	ENV_CBUILD_LIBS     = "CBUILD_LIBS"
 )
 
 type Config struct {
@@ -19,6 +25,7 @@ type Config struct {
 	IncludeDirs    []string     `cli:"I,include-dir" usage:"included directories" json:"include_dirs"`
 	LibDirs        []string     `cli:"L,library-dir" usage:"library directories" json:"lib_dirs"`
 	Libs           []string     `cli:"l,lib" usage:"libs which should be linked" json:"libs"`
+	DepDirs        []string     `cli:"D,dep-dir" usage:"dependency directories" json:"dep_dirs"`
 	ExcludeSources []string     `cli:"exclude-source" usage:"excluded source directories or/and files" json:"exclude_dirs"`
 }
 
@@ -29,9 +36,6 @@ type BuildEnv struct {
 }
 
 func (c *Config) Load(ctx *cli.Context) error {
-	if len(c.IncludeDirs) == 0 {
-		c.IncludeDirs = append(c.IncludeDirs, ".")
-	}
 	file, err := os.Open(c.Filename)
 	if err != nil {
 		if !ctx.IsSet("-f") {
@@ -40,7 +44,14 @@ func (c *Config) Load(ctx *cli.Context) error {
 		return err
 	}
 	defer file.Close()
-	return json.NewDecoder(file).Decode(c)
+	err = json.NewDecoder(file).Decode(c)
+	if err != nil {
+		return err
+	}
+	c.IncludeDirs = append(c.IncludeDirs, ".")
+	c.IncludeDirs = append(c.IncludeDirs, strings.Split(os.Getenv(ENV_CBUILD_INCLUDES), string(os.PathListSeparator))...)
+	c.LibDirs = append(c.LibDirs, strings.Split(os.Getenv(ENV_CBUILD_LIBS), string(os.PathListSeparator))...)
+	return nil
 }
 
 func (c Config) IsExcluded(path string) bool {

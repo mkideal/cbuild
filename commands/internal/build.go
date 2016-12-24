@@ -70,12 +70,18 @@ func newMakefile(c etc.Config) *Makefile {
 	return makefile
 }
 
-const T_makefile = `build:{{with $m := .}}{{range $source := .SourceFiles}} {{$m.BuildDir}}{{$source}}.o{{end}}{{end}}
-	{{.Cpp}}{{with $m := .}}{{range $source := .SourceFiles}} {{$m.BuildDir}}{{$source}}.o{{end}}{{end}} {{.ReleaseTag}} {{.Includes}} {{.LibraryDirs}} {{.Libs}} -o {{.Target}}
+func (makefile *Makefile) ObjectFilename(source string) string {
+	source = strings.Replace(source, "..", "__", -1)
+	name := filepath.Join(makefile.BuildDir, source)
+	return name + ".o"
+}
+
+const T_makefile = `build:{{with $m := .}}{{range $source := .SourceFiles}} {{$m.ObjectFilename $source}}{{end}}{{end}}
+	{{.Cpp}}{{with $m := .}}{{range $source := .SourceFiles}} {{$m.ObjectFilename $source}}{{end}}{{end}} {{.ReleaseTag}} {{.Includes}} {{.LibraryDirs}} {{.Libs}} -o {{.Target}}
 
 	{{with $m := .}}{{range $source := .SourceFiles}}
-{{$m.BuildDir}}{{$source}}.o: {{$source}}
-	{{$m.Cpp}} -c {{$source}} {{$m.ReleaseTag}} {{$m.Includes}} -o {{$m.BuildDir}}{{$source}}.o
+{{$m.ObjectFilename $source}}: {{$source}}
+	{{$m.Cpp}} -c {{$source}} {{$m.ReleaseTag}} {{$m.Includes}} -o {{$m.ObjectFilename $source}}
 {{end}}{{end}}
 `
 
@@ -88,19 +94,31 @@ func SetLogLevel(level logger.Level) {
 
 func GetSourceFiles(projectDir string, c etc.Config) []string {
 	var files []string
-	filepath.Walk(projectDir, func(path string, info os.FileInfo, err error) error {
-		if info == nil {
-			return err
-		}
-		log.Debug("path=%s", path)
-		if info.IsDir() && c.IsExcluded(path) {
-			return filepath.SkipDir
-		}
-		if !info.IsDir() && hasSourceSuffix(info.Name()) {
-			files = append(files, path)
-		}
-		return nil
-	})
+	seen := map[string]bool{}
+	dirs := append(c.DepDirs, projectDir)
+	for _, dir := range dirs {
+		filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+			if info == nil {
+				return err
+			}
+			log.Debug("GetSourceFiles: path=%s", path)
+			if info.IsDir() && c.IsExcluded(path) {
+				return filepath.SkipDir
+			}
+			if !info.IsDir() && hasSourceSuffix(info.Name()) {
+				fullpath, err := filepath.Abs(path)
+				if err != nil {
+					return err
+				}
+				if !seen[fullpath] {
+					seen[fullpath] = true
+					files = append(files, path)
+				}
+			}
+			return nil
+		})
+	}
+	log.WithJSON(files).Debug("source files")
 	return files
 }
 
@@ -129,6 +147,7 @@ func CreateMakefile(c etc.Config, env etc.BuildEnv) (*Makefile, error) {
 	} else {
 		makefile.BuildDir = filepath.Join(c.ObjectsDir, "debug")
 	}
+	log.Debug("BuildDir: %s", makefile.BuildDir)
 	if err := InitBuildDir(makefile); err != nil {
 		os.RemoveAll(makefile.BuildDir)
 		return nil, err
@@ -169,6 +188,7 @@ func GenMakefile(makefile *Makefile) error {
 func InitBuildDir(makefile *Makefile) error {
 	for _, name := range makefile.SourceFiles {
 		dir, _ := filepath.Split(name)
+		dir = strings.Replace(dir, "..", "__", -1)
 		dir = filepath.Join(makefile.BuildDir, dir)
 		log.Debug("dir=%s", dir)
 		err := os.MkdirAll(dir, 0755)
